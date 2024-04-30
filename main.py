@@ -2,6 +2,7 @@ import os
 import tempfile
 import streamlit as st
 from streamlit_chat import message
+import logging
 
 from langchain_community.vectorstores import Chroma
 from langchain_community.chat_models import ChatOllama
@@ -12,6 +13,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.vectorstores.utils import filter_complex_metadata
+
+logging.basicConfig(level=logging.INFO)
 
 
 class ChatPDFAssistant:
@@ -24,7 +27,6 @@ class ChatPDFAssistant:
         self.vector_store = None
         self.retriever = None
         self.chain_with_pdf = None
-        #self.chain_without_pdf = None
         self.chain_without_pdf = self._prepare_chain_without_pdf()
 
     @staticmethod
@@ -67,33 +69,45 @@ class ChatPDFAssistant:
             | StrOutputParser())
 
     def ingest_pdf(self, pdf_file_path: str):
-        docs = PyPDFLoader(file_path=pdf_file_path).load()
-        chunks = self.text_splitter.split_documents(docs)
-        chunks = filter_complex_metadata(chunks)
-        self.vector_store = Chroma.from_documents(documents=chunks, embedding=FastEmbedEmbeddings())
-        self._prepare_retriever()
+        try:
+            docs = PyPDFLoader(file_path=pdf_file_path).load()
+            chunks = self.text_splitter.split_documents(docs)
+            chunks = filter_complex_metadata(chunks)
+            self.vector_store = Chroma.from_documents(documents=chunks, embedding=FastEmbedEmbeddings())
+            self._prepare_retriever()
+        except Exception as e:
+            logging.error(f"Error ingesting PDF: {e}")
+            raise
 
     def _prepare_retriever(self):
-        self.retriever = self.vector_store.as_retriever(
-            search_type="similarity_score_threshold",
-            search_kwargs={"k": 3, "score_threshold": 0.5},
-        )
-        self.chain_with_pdf = ({"context": self.retriever, "question": RunnablePassthrough()}
-                               | self.prompt_with_pdf
-                               | self.model
-                               | StrOutputParser())
+        try:
+            self.retriever = self.vector_store.as_retriever(
+                search_type="similarity_score_threshold",
+                search_kwargs={"k": 3, "score_threshold": 0.5},
+            )
+            self.chain_with_pdf = ({"context": self.retriever, "question": RunnablePassthrough()}
+                                   | self.prompt_with_pdf
+                                   | self.model
+                                   | StrOutputParser())
+        except Exception as e:
+            logging.error(f"Error preparing retriever: {e}")
+            raise
 
     def ask(self, query: str):
-        if self.chain_with_pdf:
-            return self.chain_with_pdf.invoke(query)
-        else:
-            return self.chain_without_pdf.invoke(query)
-        
+        try:
+            if self.chain_with_pdf:
+                return self.chain_with_pdf.invoke(query)
+            else:
+                return self.chain_without_pdf.invoke(query)
+        except Exception as e:
+            logging.error(f"Error processing user query: {e}")
+            raise
 
     def clear(self):
         self.vector_store = None
         self.retriever = None
         self.chain_with_pdf = None
+        self.chain_without_pdf = self._prepare_chain_without_pdf()
 
 
 def setup_streamlit_page():
@@ -156,7 +170,11 @@ def process_user_input():
     user_text = st.session_state["user_input"].strip()
     if user_text:
         with st.session_state["thinking_spinner"], st.spinner("Thinking"):
-            agent_text = st.session_state["assistant"].ask(user_text)
+            try:
+                agent_text = st.session_state["assistant"].ask(user_text)
+            except Exception as e:
+                agent_text = f"An error occurred: {e}"
+                logging.error(f"Error processing user input: {e}")
 
         st.session_state["messages"].append((user_text, True))
         st.session_state["messages"].append((agent_text, False))
