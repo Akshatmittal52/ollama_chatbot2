@@ -1,7 +1,4 @@
-import os
-import tempfile
 import streamlit as st
-from streamlit_chat import message
 import logging
 
 from langchain_community.vectorstores import Chroma
@@ -21,7 +18,6 @@ class ChatPDFAssistant:
     
     def __init__(self):
         self.model = ChatOllama(model="mistral", port=12345)  # Use port 12345 instead of the default port 11434
-        #self.model = ChatOllama(model="mistral")  
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=100)
         self.prompt_with_pdf = self._create_prompt_template_with_pdf()
         self.prompt_without_pdf = self._create_prompt_template_without_pdf()
@@ -69,9 +65,9 @@ class ChatPDFAssistant:
             | self.model
             | StrOutputParser())
 
-    def ingest_pdf(self, pdf_file_path: str):
+    def ingest_pdf(self, pdf_file):
         try:
-            docs = PyPDFLoader(file_path=pdf_file_path).load()
+            docs = PyPDFLoader(file_content=pdf_file.read()).load()
             chunks = self.text_splitter.split_documents(docs)
             chunks = filter_complex_metadata(chunks)
             self.vector_store = Chroma.from_documents(documents=chunks, embedding=FastEmbedEmbeddings())
@@ -94,7 +90,7 @@ class ChatPDFAssistant:
             logging.error(f"Error preparing retriever: {e}")
             raise
 
-    def ask(self, query: str):
+    def ask(self, query):
         try:
             if self.chain_with_pdf:
                 return self.chain_with_pdf.invoke(query)
@@ -126,9 +122,7 @@ def display_chat_interface():
         if "messages" not in st.session_state:
             st.session_state["messages"] = []
         for i, (msg, is_user) in enumerate(st.session_state["messages"]):
-            message(msg, is_user=is_user, key=str(i))
-    if "thinking_spinner" not in st.session_state:
-        st.session_state["thinking_spinner"] = st.empty()
+            st.write(msg if is_user else f"Bot: {msg}")
 
 
 def handle_file_upload():
@@ -138,16 +132,10 @@ def handle_file_upload():
         st.session_state["user_input"] = ""
 
     for file in st.session_state["file_uploader"]:
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(file.getbuffer())
-            file_path = temp_file.name
-
-        if "ingestion_spinner" not in st.session_state:
-            st.session_state["ingestion_spinner"] = st.empty()
-
-        with st.session_state["ingestion_spinner"], st.spinner(f"Reading {file.name}"):
-            st.session_state["assistant"].ingest_pdf(file_path)
-        os.remove(file_path)
+        if file.type == "application/pdf":
+            st.session_state["assistant"].ingest_pdf(file)
+        else:
+            st.error("Please upload only PDF files.")
 
 
 def setup_chat_page():
@@ -159,27 +147,20 @@ def setup_chat_page():
 
 def setup_sidebar():
     st.sidebar.file_uploader("Upload new document", type=["pdf"], key="file_uploader",
-                             on_change=handle_file_upload, label_visibility="collapsed",
-                             accept_multiple_files=True)
-    if st.sidebar.button("Clear Documents"):
-        if "assistant" in st.session_state:
-            st.session_state["assistant"].clear()
-        st.session_state["messages"] = []
+                             on_change=handle_file_upload, label="Upload PDF file")
 
 
 def process_user_input():
     user_text = st.session_state["user_input"].strip()
     if user_text:
-        with st.session_state["thinking_spinner"], st.spinner("Thinking"):
-            try:
-                agent_text = st.session_state["assistant"].ask(user_text)
-            except Exception as e:
-                agent_text = f"An error occurred: {e}"
-                logging.error(f"Error processing user input: {e}")
+        try:
+            agent_text = st.session_state["assistant"].ask(user_text)
+        except Exception as e:
+            agent_text = f"An error occurred: {e}"
+            logging.error(f"Error processing user input: {e}")
 
         st.session_state["messages"].append((user_text, True))
         st.session_state["messages"].append((agent_text, False))
-    
 
 
 if __name__ == "__main__":
