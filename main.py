@@ -20,7 +20,8 @@ logging.basicConfig(level=logging.INFO)
 class ChatPDFAssistant:
     
     def __init__(self):
-        self.model = ChatOllama(model="mistral")  
+        self.model = ChatOllama(model="mistral", port=12345)  # Use port 12345 instead of the default port 11434
+        #self.model = ChatOllama(model="mistral")  
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=100)
         self.prompt_with_pdf = self._create_prompt_template_with_pdf()
         self.prompt_without_pdf = self._create_prompt_template_without_pdf()
@@ -178,6 +179,7 @@ def process_user_input():
 
         st.session_state["messages"].append((user_text, True))
         st.session_state["messages"].append((agent_text, False))
+    
 
 
 if __name__ == "__main__":
