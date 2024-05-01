@@ -192,7 +192,7 @@ app = Flask(__name__)
 class ChatPDFAssistant:
     """Handles PDF ingestion, query processing, and answering queries using a chat model."""
     
-    def __init__(self, chat_service_host="YOUR_HOSTNAME_OR_IP", chat_service_port=11434):
+    def __init__(self, chat_service_host="192.168.1.35", chat_service_port=11434):
         self.chat_service_host = chat_service_host
         self.chat_service_port = chat_service_port
         self.model = ChatOllama(model="mistral", host=chat_service_host, port=chat_service_port) # Modify based on actual implementation
@@ -281,5 +281,5 @@ def ask():
         return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=8000)
 
