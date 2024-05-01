@@ -1,3 +1,4 @@
+'''
 import streamlit as st
 import logging
 
@@ -169,3 +170,116 @@ def process_user_input():
 if __name__ == "__main__":
     setup_streamlit_page()
     setup_chat_page()
+'''
+
+import os
+import tempfile
+from flask import Flask, request, jsonify
+
+# Importing other required modules from your code
+from langchain_community.vectorstores import Chroma
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import FastEmbedEmbeddings
+from langchain_core.output_parsers import StrOutputParser
+from langchain_community.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_community.vectorstores.utils import filter_complex_metadata
+
+app = Flask(__name__)
+
+class ChatPDFAssistant:
+    """Handles PDF ingestion, query processing, and answering queries using a chat model."""
+    
+    def __init__(self, chat_service_host="YOUR_HOSTNAME_OR_IP", chat_service_port=11434):
+        self.chat_service_host = chat_service_host
+        self.chat_service_port = chat_service_port
+        self.model = ChatOllama(model="mistral", host=chat_service_host, port=chat_service_port) # Modify based on actual implementation
+        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=100)
+        self.prompt = self._create_prompt_template()
+        self.vector_store = None
+        self.retriever = None
+        self.chain = None
+
+    @staticmethod
+    def _create_prompt_template():
+        return ChatPromptTemplate.from_template(
+            """
+            <s> [INST] 
+            You are an AI assistant with access to specific text snippets for answering questions.
+            Your answers must be directly based only on the provided context.
+            If the context does not contain enough information for a definitive answer, say that you don't know and ask the user to provide additional information. 
+            [/INST] </s> 
+            [INST] 
+            Question: {question} 
+            Context: {context} 
+            Answer: 
+            [/INST]
+            """
+        )
+        
+    def ingest_pdf(self, pdf_file_path: str):
+        docs = PyPDFLoader(file_path=pdf_file_path).load()
+        chunks = self.text_splitter.split_documents(docs)
+        chunks = filter_complex_metadata(chunks)
+        self.vector_store = Chroma.from_documents(documents=chunks, embedding=FastEmbedEmbeddings())
+        self._prepare_retriever()
+
+    def _prepare_retriever(self):
+        self.retriever = self.vector_store.as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={"k": 3, "score_threshold": 0.5},
+        )
+        self.chain = ({"context": self.retriever, "question": RunnablePassthrough()}
+                      | self.prompt
+                      | self.model
+                      | StrOutputParser())
+
+    def ask(self, query: str):
+        if not self.chain:
+            return "Please, add a PDF document first."
+        return self.chain.invoke(query)
+
+    def clear(self):
+        self.vector_store = None
+        self.retriever = None
+        self.chain = None
+
+assistant = ChatPDFAssistant()
+
+@app.route('/upload_pdf', methods=['POST'])
+def upload_pdf():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"})
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"})
+
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        temp_file.write(file.read())
+        file_path = temp_file.name
+
+    try:
+        assistant.ingest_pdf(file_path)
+        os.remove(file_path)
+        return jsonify({"message": "PDF successfully uploaded and ingested"})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route('/ask', methods=['POST'])
+def ask():
+    if 'query' not in request.json:
+        return jsonify({"error": "No query provided"})
+
+    query = request.json['query']
+    try:
+        response = assistant.ask(query)
+        return jsonify({"response": response})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
