@@ -150,8 +150,8 @@ def setup_sidebar():
     st.sidebar.file_uploader(label="Upload new document", type=["pdf"], key="file_uploader",
                              on_change=handle_file_upload)
 
-    '''st.sidebar.file_uploader("Upload new document", type=["pdf"], key="file_uploader",
-                             on_change=handle_file_upload, label="Upload PDF file")'''
+    st.sidebar.file_uploader("Upload new document", type=["pdf"], key="file_uploader",
+                             on_change=handle_file_upload, label="Upload PDF file")
 
 
 def process_user_input():
