@@ -1,4 +1,3 @@
-'''
 import streamlit as st
 import logging
 
@@ -170,7 +169,7 @@ def process_user_input():
 if __name__ == "__main__":
     setup_streamlit_page()
     setup_chat_page()
-'''
+
 '''
 import os
 import tempfile
@@ -283,6 +282,8 @@ def ask():
 if __name__ == "__main__":
     app.run(debug=True, port=11434)
 '''
+
+'''
 import os
 import tempfile
 from flask import Flask, request, jsonify
@@ -393,4 +394,4 @@ def ask():
 
 if __name__ == "__main__":
     app.run(debug=True)
-
+'''
